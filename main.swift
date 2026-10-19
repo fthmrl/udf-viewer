@@ -5,7 +5,6 @@ import AppKit
 // Çift tıklama UYAP Doküman Editörü'nde kalır.
 
 let SURUM = Int(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1") ?? 1
-let KLASOR_ADI = "UDF VIEWER"
 let GITHUB_DEPO = "fthmrl/udf-viewer"
 let UYGULAMA_ADI = "UDF Viewer"
 
@@ -16,25 +15,12 @@ let YENILIKLER: [Int: [String]] = [
     3: ["Takip talebi, ödeme emri gibi gruplu UYAP şablonları doğru görünür: boş bölümler gizlenir, alacak tablosu satır satır dolar.",
         "Tablo sütunları evraktaki genişliklerle gösterilir."],
     4: ["Uygulama kimliği com.fthmrl.udfviewer oldu; Hızlı Bakış eskisi gibi çalışır."],
+    5: ["Güncellemeler yalnız GitHub'dan denetlenir; uygulama artık OneDrive'a erişmez, bu yüzden OneDrive izni sormaz."],
 ]
 
 let uygulamaYolu = Bundle.main.bundleURL
 
 struct SurumBilgisi: Decodable { let surum: Int; let dosya: String; let notlar: [String]? }
-
-/// OneDrive'daki AI/UDF VIEWER klasörü (hesap adı her Mac'te farklı olabilir).
-func yayimKlasoru() -> URL? {
-    let fm = FileManager.default
-    let cs = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/CloudStorage")
-    let hesaplar = (try? fm.contentsOfDirectory(at: cs, includingPropertiesForKeys: nil)) ?? []
-    for h in hesaplar where h.lastPathComponent.hasPrefix("OneDrive") {
-        for ai in ["AI", "Aİ"] {
-            let k = h.appendingPathComponent(ai).appendingPathComponent(KLASOR_ADI)
-            if fm.fileExists(atPath: k.appendingPathComponent("surum.json").path) { return k }
-        }
-    }
-    return nil
-}
 
 func uyari(_ baslik: String, _ metin: String, _ dugmeler: [String] = ["Tamam"]) -> Int {
     let a = NSAlert()
@@ -68,19 +54,13 @@ func indir(_ url: URL, zamanAsimi: TimeInterval) -> Data? {
     return sonuc
 }
 
-/// En yeni sürüm: önce GitHub'daki son yayın, sonra (varsa) OneDrive klasörü; hangisi büyükse.
+/// En yeni sürüm GitHub'daki son yayından okunur (OneDrive'a bakılmaz: başka Mac'lerde izin uyarısı çıkarmasın).
 func enYeniSurum() -> (SurumBilgisi, URL)? {
     var adaylar: [(SurumBilgisi, URL)] = []
     let gh = URL(string: "https://github.com/\(GITHUB_DEPO)/releases/latest/download/")!
     if let d = indir(gh.appendingPathComponent("surum.json"), zamanAsimi: 4),
        let b = try? JSONDecoder().decode(SurumBilgisi.self, from: d) {
         adaylar.append((b, URL(string: "https://github.com/\(GITHUB_DEPO)/releases/download/v\(b.surum)/\(b.dosya)")!))
-    }
-    if let k = yayimKlasoru(),
-       let d = try? Data(contentsOf: k.appendingPathComponent("surum.json")),
-       let b = try? JSONDecoder().decode(SurumBilgisi.self, from: d),
-       FileManager.default.fileExists(atPath: k.appendingPathComponent(b.dosya).path) {
-        adaylar.append((b, k.appendingPathComponent(b.dosya)))
     }
     return adaylar.filter { $0.0.surum > SURUM }.max { $0.0.surum < $1.0.surum }
 }
