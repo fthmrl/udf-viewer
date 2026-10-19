@@ -13,6 +13,8 @@ let UYGULAMA_ADI = "UDF Viewer"
 let YENILIKLER: [Int: [String]] = [
     1: ["Finder'da bir .udf seçip boşluk tuşuna basın: evrak biçimiyle Hızlı Bakış'ta görünür."],
     2: ["UYAP form şablonlu evraklarda (haciz, tebligat, kesinleştirme talebi vb.) alan adları yerine asıl bilgiler görünür."],
+    3: ["Takip talebi, ödeme emri gibi gruplu UYAP şablonları doğru görünür: boş bölümler gizlenir, alacak tablosu satır satır dolar.",
+        "Tablo sütunları evraktaki genişliklerle gösterilir."],
 ]
 
 let uygulamaYolu = Bundle.main.bundleURL

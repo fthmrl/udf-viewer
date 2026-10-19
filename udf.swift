@@ -97,11 +97,48 @@ func kacis(_ s: String) -> String {
 func sayi(_ s: String?) -> Double? { s.flatMap { Double($0.trimmingCharacters(in: .whitespaces)) } }
 func pt(_ v: Double) -> String { v == v.rounded() ? String(Int(v)) : String(format: "%.2f", v) }
 
+// Form şablonlu evrakta (takip/haciz/tebligat talebi vb.) metinde yalnızca alan adı yazar; asıl değerler
+// content.xml sonundaki <data> bölümündedir. Alanlar gruplara bağlıdır (fieldGroupName): verisinde
+// bulunmayan grubun alanları ve yazıları gösterilmez (ör. "vekilleri", mirasçı, ilam bilgisi). Satırı
+// "dataRow" olan tablolar verideki her satır için tekrarlanır. Verideki adlarda rakamlar X+harf
+// yazılır (Tablo40 -> TabloXeXa). Normal dilekçede <data> yoktur; metin olduğu gibi gösterilir.
+// (evrak-isleme/scripts/yazdir.py ile aynı kurallar)
+func kod(_ ad: String) -> String {
+    var s = ""
+    for ch in ad {
+        if ch.isASCII, let d = ch.wholeNumberValue { s += "X" + String(UnicodeScalar(UInt8(97 + d))) } else { s.append(ch) }
+    }
+    return s
+}
+
+func cocuklar(_ e: XMLElement) -> [XMLElement] { e.children?.compactMap { $0 as? XMLElement } ?? [] }
+
+/// Kendisi hariç bütün alt öğeler, belge sırasıyla
+func torunlar(_ e: XMLElement) -> [XMLElement] {
+    var out: [XMLElement] = []
+    for c in cocuklar(e) { out.append(c); out += torunlar(c) }
+    return out
+}
+
+/// Bağlam altında adı eşleşen ilk öğe; önce doğrudan çocuklar, sonra derindekiler
+func bul(_ baglam: XMLElement, _ ad: String) -> XMLElement? {
+    let adlar: Set = [ad, kod(ad)]
+    return cocuklar(baglam).first { adlar.contains($0.name ?? "") } ?? torunlar(baglam).first { adlar.contains($0.name ?? "") }
+}
+
+/// Aynı ad birden çok geçebilir (ör. <tarih>17/11/2025</tarih> ... <tarih></tarih>): ilk boş olmayan
+func deger(_ baglam: XMLElement, _ ad: String) -> String {
+    let adlar: Set = [ad, kod(ad)]
+    for e in cocuklar(baglam).filter({ adlar.contains($0.name ?? "") }) + torunlar(baglam).filter({ adlar.contains($0.name ?? "") }) {
+        guard cocuklar(e).isEmpty, let v = e.stringValue, !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+        return v.trimmingCharacters(in: .newlines).replacingOccurrences(of: "\r", with: "")
+    }
+    return ""
+}
+
 struct UDFBelge {
     let metin: NSString
     var stiller: [String: [String: String]] = [:]
-    /// Form şablonlu evrakta (talep, haciz vb.) alanların asıl değerleri <data> bölümündedir.
-    var alanlar: [String: String] = [:]
 
     func stil(_ e: XMLElement) -> [String: String] {
         var h: [String: String] = [:]
@@ -110,7 +147,47 @@ struct UDFBelge {
         return h
     }
 
-    func paragraf(_ p: XMLElement) -> String {
+    /// Paragrafın gösterilecek parçaları: (metin, öğe); resim için metin "<img>"
+    func parcalar(_ p: XMLElement, _ veri0: XMLElement?) -> [(String, XMLElement)] {
+        var veri = veri0
+        let ust = veri0
+        if let v = veri, let g = p.attribute(forName: "GroupName")?.stringValue, let e = bul(v, g) { veri = e }
+        var out: [(String, XMLElement)] = []
+        var oncekiAlan = false
+        for c in cocuklar(p) {
+            if c.name == "image" { out.append(("<img>", c)); oncekiAlan = false; continue }
+            var baglam = veri
+            let grup = c.attribute(forName: "fieldGroupName")?.stringValue
+            if let v = veri, let g = grup {
+                guard let e = bul(v, g) else { continue }   // grup veride yok: bu parça gösterilmez
+                baglam = e
+            }
+            let bas = Int(c.attribute(forName: "startOffset")?.stringValue ?? "") ?? 0
+            let uzun = min(Int(c.attribute(forName: "length")?.stringValue ?? "") ?? 0, metin.length - bas)   // taşan parça kırpılır
+            var t = ""
+            if bas >= 0, uzun > 0 {
+                t = metin.substring(with: NSRange(location: bas, length: uzun))
+                    .replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\n", with: "")
+            }
+            if c.name == "field", let b = baglam {
+                let ad = c.attribute(forName: "fieldName")?.stringValue ?? ""
+                if ad == "eol" { t = "\n" }
+                else if ad == "ceol" { t = deger(b, ad) == "true" ? "\n" : "" }
+                else {
+                    t = deger(b, ad)   // değerdeki satır sonları korunur; değeri yoksa boş
+                    if t.isEmpty, grup == nil, let u = ust, b !== u { t = deger(u, ad) }
+                }
+                if !t.isEmpty, oncekiAlan, let son = out.last?.0.last, !son.isWhitespace, t.first?.isWhitespace == false {
+                    t = " " + t   // art arda gelen alan değerleri bitişmesin
+                }
+                oncekiAlan = oncekiAlan || !t.isEmpty
+            } else { oncekiAlan = false }
+            if !t.isEmpty { out.append((t, c)) }
+        }
+        return out
+    }
+
+    func paragraf(_ p: XMLElement, _ veri: XMLElement?) -> String {
         let ps = stil(p)
         let hiza = ["1": "center", "2": "right", "3": "justify"][ps["Alignment"] ?? ""] ?? "left"
         let tab = ps["TabSet"].flatMap { sayi(String($0.split(separator: ":").first ?? "")) } ?? 36
@@ -120,46 +197,61 @@ struct UDFBelge {
                              ("FirstLineIndent", "text-indent")] {
             if let v = sayi(ps[k]) { css += "\(ozellik):\(pt(v))pt;" }
         }
-        var parcalar = ""
-        for c in p.children?.compactMap({ $0 as? XMLElement }) ?? [] {
-            if c.name == "image" {
+        var html = ""
+        for (t, c) in parcalar(p, veri) {
+            if t == "<img>" {
                 let b64 = (c.attribute(forName: "imageData")?.stringValue ?? "").filter { !$0.isWhitespace }
                 guard !b64.isEmpty else { continue }
                 let tur = b64.hasPrefix("/9j") ? "image/jpeg" : b64.hasPrefix("R0lG") ? "image/gif" : "image/png"
-                parcalar += "<img src=\"data:\(tur);base64,\(b64)\">"
+                html += "<img src=\"data:\(tur);base64,\(b64)\">"
                 continue
             }
             let cs = stil(c)
-            let bas = Int(c.attribute(forName: "startOffset")?.stringValue ?? "") ?? 0
-            let uzun = Int(c.attribute(forName: "length")?.stringValue ?? "") ?? 0
-            guard bas >= 0, uzun > 0, bas + uzun <= metin.length else { continue }
-            var t = metin.substring(with: NSRange(location: bas, length: uzun))
-                .replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\n", with: "")
-            if c.name == "field", let ad = c.attribute(forName: "fieldName")?.stringValue, let v = alanlar[ad] {
-                t = v.replacingOccurrences(of: "\r", with: "")   // alan değerindeki satır sonları korunur
-            }
-            guard !t.isEmpty else { continue }
             var rs = ""
             if cs["bold"] == "true" { rs += "font-weight:bold;" }
             if cs["italic"] == "true" { rs += "font-style:italic;" }
             if cs["underline"] == "true" { rs += "text-decoration:underline;" }
             if let s = sayi(cs["size"]) { rs += "font-size:\(pt(s))pt;" }
             if let f = cs["family"], f != "Dialog", f != "Editor" { rs += "font-family:'\(kacis(f))',serif;" }
-            parcalar += "<span style=\"\(rs)\">\(kacis(t))</span>"
+            html += "<span style=\"\(rs)\">\(kacis(t))</span>"
         }
-        return "<p style=\"\(css)\">\(parcalar.isEmpty ? "&nbsp;" : parcalar)</p>"
+        return "<p style=\"\(css)\">\(html.isEmpty ? "&nbsp;" : html)</p>"
     }
 
-    func blok(_ dugum: XMLElement?) -> String {
+    /// Tablonun gösterilecek satırları; dataRow verideki her satır için tekrarlanır
+    func satirlar(_ tablo: XMLElement, _ veri: XMLElement?) -> [(XMLElement, XMLElement?)] {
+        var out: [(XMLElement, XMLElement?)] = []
+        for satir in tablo.elements(forName: "row") {
+            if satir.attribute(forName: "rowType")?.stringValue == "dataRow", let v = veri {
+                guard let vt = bul(v, tablo.attribute(forName: "tableName")?.stringValue ?? "") else { continue }
+                let rn = satir.attribute(forName: "rowName")?.stringValue ?? ""
+                let adlar: Set = [rn, kod(rn)]
+                for vs in cocuklar(vt) where adlar.contains(vs.name ?? "") { out.append((satir, vs)) }
+            } else { out.append((satir, veri)) }
+        }
+        return out
+    }
+
+    func genislikler(_ tablo: XMLElement, _ satir: XMLElement) -> [String?] {
+        let n = satir.elements(forName: "cell").count
+        for k in [satir.attribute(forName: "columnSpans")?.stringValue, tablo.attribute(forName: "columnSpans")?.stringValue] {
+            let d = (k ?? "").split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            let top = d.reduce(0, +)
+            if d.count == n, top > 0 { return d.map { String(format: "%.1f%%", $0 / top * 100) } }
+        }
+        return Array(repeating: nil, count: n)
+    }
+
+    func blok(_ dugum: XMLElement?, _ veri: XMLElement?) -> String {
         var cikti: [String] = []
-        for c in dugum?.children?.compactMap({ $0 as? XMLElement }) ?? [] {
-            if c.name == "paragraph" { cikti.append(paragraf(c)) }
+        for c in dugum.map(cocuklar) ?? [] {
+            if c.name == "paragraph" { cikti.append(paragraf(c, veri)) }
             else if c.name == "table" {
                 let kenar = c.attribute(forName: "border")?.stringValue == "borderNone" ? "none" : "1px solid #000"
                 cikti.append("<table>")
-                for satir in c.elements(forName: "row") {
-                    let hucreler = satir.elements(forName: "cell")
-                        .map { "<td style=\"border:\(kenar)\">\(blok($0))</td>" }.joined()
+                for (satir, sv) in satirlar(c, veri) {
+                    let hucreler = zip(satir.elements(forName: "cell"), genislikler(c, satir))
+                        .map { "<td style=\"border:\(kenar)\($1.map { ";width:" + $0 } ?? "")\">\(blok($0, sv))</td>" }.joined()
                     cikti.append("<tr>\(hucreler)</tr>")
                 }
                 cikti.append("</table>")
@@ -188,17 +280,12 @@ func udfHTML(_ veri: Data, baslik: String) throws -> String {
         for a in e.attributes ?? [] where a.name != "name" { if let n = a.name, let v = a.stringValue { h[n] = v } }
         belge.stiller[ad] = h
     }
-    for e in kok.elements(forName: "data").first?.children?.compactMap({ $0 as? XMLElement }) ?? [] {
-        guard let ad = e.name, let v = e.stringValue,
-              !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, belge.alanlar[ad] == nil else { continue }
-        belge.alanlar[ad] = v.trimmingCharacters(in: .newlines)
-    }
     let pf = kok.elements(forName: "properties").first?.elements(forName: "pageFormat").first
     let kenar = ["topMargin", "rightMargin", "bottomMargin", "leftMargin"].map { k -> String in
         let v = sayi(pf?.attribute(forName: k)?.stringValue) ?? 42.5
         return pt(max(v, 28)) + "pt"
     }.joined(separator: " ")
-    let govde = belge.blok(kok.elements(forName: "elements").first)
+    let govde = belge.blok(kok.elements(forName: "elements").first, kok.elements(forName: "data").first)
     return """
     <!DOCTYPE html><html lang="tr"><head><meta charset="utf-8"><title>\(kacis(baslik))</title><style>
     html { background: #8e8e93; }
