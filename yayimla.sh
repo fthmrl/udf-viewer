@@ -29,7 +29,7 @@ kur() {
   rm -rf "/Applications/$A"; cp -R "$B/$A" /Applications/
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/$A"
   pluginkit -a "/Applications/$A/Contents/PlugIns/UDFOnizleme.appex"
-  pluginkit -e use -i com.meralavukatlik.udfviewer.onizleme
+  pluginkit -e use -i com.fthmrl.udfviewer.onizleme
   qlmanage -r >/dev/null 2>&1 || true
 }
 if [[ -n $YALNIZ_KUR ]]; then kur; echo "v$N derlendi ve bu Mac'e kuruldu (yayımlanmadı)."; exit 0; fi

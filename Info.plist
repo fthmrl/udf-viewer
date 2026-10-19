@@ -11,7 +11,7 @@
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.meralavukatlik.udfviewer</string>
+	<string>com.fthmrl.udfviewer</string>
 	<key>CFBundleName</key>
 	<string>UDF Viewer</string>
 	<key>CFBundlePackageType</key>

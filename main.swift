@@ -15,6 +15,7 @@ let YENILIKLER: [Int: [String]] = [
     2: ["UYAP form şablonlu evraklarda (haciz, tebligat, kesinleştirme talebi vb.) alan adları yerine asıl bilgiler görünür."],
     3: ["Takip talebi, ödeme emri gibi gruplu UYAP şablonları doğru görünür: boş bölümler gizlenir, alacak tablosu satır satır dolar.",
         "Tablo sütunları evraktaki genişliklerle gösterilir."],
+    4: ["Uygulama kimliği com.fthmrl.udfviewer oldu; Hızlı Bakış eskisi gibi çalışır."],
 ]
 
 let uygulamaYolu = Bundle.main.bundleURL
@@ -125,7 +126,7 @@ func eklentiyiKaydet() {
     let eklenti = uygulamaYolu.appendingPathComponent("Contents/PlugIns/UDFOnizleme.appex").path
     _ = calistir("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", ["-f", uygulamaYolu.path])
     _ = calistir("/usr/bin/pluginkit", ["-a", eklenti])
-    _ = calistir("/usr/bin/pluginkit", ["-e", "use", "-i", "com.meralavukatlik.udfviewer.onizleme"])
+    _ = calistir("/usr/bin/pluginkit", ["-e", "use", "-i", "com.fthmrl.udfviewer.onizleme"])
     _ = calistir("/usr/bin/qlmanage", ["-r"])
 }
 

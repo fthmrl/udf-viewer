@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>UDFOnizleme</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.meralavukatlik.udfviewer.onizleme</string>
+	<string>com.fthmrl.udfviewer.onizleme</string>
 	<key>CFBundleName</key>
 	<string>UDFOnizleme</string>
 	<key>CFBundlePackageType</key>
