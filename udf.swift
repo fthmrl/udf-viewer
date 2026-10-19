@@ -100,6 +100,8 @@ func pt(_ v: Double) -> String { v == v.rounded() ? String(Int(v)) : String(form
 struct UDFBelge {
     let metin: NSString
     var stiller: [String: [String: String]] = [:]
+    /// Form şablonlu evrakta (talep, haciz vb.) alanların asıl değerleri <data> bölümündedir.
+    var alanlar: [String: String] = [:]
 
     func stil(_ e: XMLElement) -> [String: String] {
         var h: [String: String] = [:]
@@ -131,8 +133,11 @@ struct UDFBelge {
             let bas = Int(c.attribute(forName: "startOffset")?.stringValue ?? "") ?? 0
             let uzun = Int(c.attribute(forName: "length")?.stringValue ?? "") ?? 0
             guard bas >= 0, uzun > 0, bas + uzun <= metin.length else { continue }
-            let t = metin.substring(with: NSRange(location: bas, length: uzun))
+            var t = metin.substring(with: NSRange(location: bas, length: uzun))
                 .replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\n", with: "")
+            if c.name == "field", let ad = c.attribute(forName: "fieldName")?.stringValue, let v = alanlar[ad] {
+                t = v.replacingOccurrences(of: "\r", with: "")   // alan değerindeki satır sonları korunur
+            }
             guard !t.isEmpty else { continue }
             var rs = ""
             if cs["bold"] == "true" { rs += "font-weight:bold;" }
@@ -182,6 +187,11 @@ func udfHTML(_ veri: Data, baslik: String) throws -> String {
         var h: [String: String] = [:]
         for a in e.attributes ?? [] where a.name != "name" { if let n = a.name, let v = a.stringValue { h[n] = v } }
         belge.stiller[ad] = h
+    }
+    for e in kok.elements(forName: "data").first?.children?.compactMap({ $0 as? XMLElement }) ?? [] {
+        guard let ad = e.name, let v = e.stringValue,
+              !v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, belge.alanlar[ad] == nil else { continue }
+        belge.alanlar[ad] = v.trimmingCharacters(in: .newlines)
     }
     let pf = kok.elements(forName: "properties").first?.elements(forName: "pageFormat").first
     let kenar = ["topMargin", "rightMargin", "bottomMargin", "leftMargin"].map { k -> String in

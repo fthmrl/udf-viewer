@@ -12,6 +12,7 @@ let UYGULAMA_ADI = "UDF Viewer"
 /// Her sürümün yenilikleri; güncellemeden sonraki ilk açılışta bir kez gösterilir.
 let YENILIKLER: [Int: [String]] = [
     1: ["Finder'da bir .udf seçip boşluk tuşuna basın: evrak biçimiyle Hızlı Bakış'ta görünür."],
+    2: ["UYAP form şablonlu evraklarda (haciz, tebligat, kesinleştirme talebi vb.) alan adları yerine asıl bilgiler görünür."],
 ]
 
 let uygulamaYolu = Bundle.main.bundleURL
